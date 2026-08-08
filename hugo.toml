@@ -1,0 +1,91 @@
+baseURL = "https://brotherwook.github.io/"
+languageCode = "ko-kr"
+title = "brotherwook의 블로그"
+theme = "PaperMod"
+
+enableInlineShortcodes = true
+enableRobotsTXT = true
+buildDrafts = false
+buildFuture = false
+buildExpired = false
+enableEmoji = true
+
+# 페이지네이션 (한 페이지에 보여줄 글 수)
+[pagination]
+  pagerSize = 10
+
+# 검색 기능을 위한 출력 형식
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+
+[params]
+  env = "production"
+  description = "brotherwook의 개발 블로그입니다."
+  author = "brotherwook"
+  defaultTheme = "auto"        # auto / light / dark
+  ShowShareButtons = true
+  ShowReadingTime = true
+  ShowBreadCrumbs = true
+  ShowPostNavLinks = true
+  ShowCodeCopyButtons = true   # 코드 블록 복사 버튼
+  ShowToc = true               # 목차
+  TocOpen = false
+  ShowWordCount = true
+
+  # 홈 화면 프로필 모드
+  [params.profileMode]
+    enabled = true
+    title = "brotherwook"
+    subtitle = "개발과 기록을 좋아하는 블로그입니다 👋"
+    imageUrl = ""              # 프로필 이미지 경로 (예: /images/profile.png)
+    imageWidth = 120
+    imageHeight = 120
+    [[params.profileMode.buttons]]
+      name = "글 보기"
+      url = "posts"
+    [[params.profileMode.buttons]]
+      name = "태그"
+      url = "tags"
+
+  # 소셜 아이콘
+  [[params.socialIcons]]
+    name = "github"
+    url = "https://github.com/brotherwook"
+
+  # 홈 정보 모드 (profileMode 대신 쓰고 싶으면 profileMode.enabled 를 false 로,
+  # 아래 내용을 쓰려면 테마 문서를 참고하세요)
+  [params.homeInfoParams]
+    Title = "안녕하세요 👋"
+    Content = "brotherwook의 개발 블로그에 오신 것을 환영합니다."
+
+# 상단 메뉴
+[menu]
+  [[menu.main]]
+    identifier = "posts"
+    name = "글"
+    url = "/posts/"
+    weight = 10
+  [[menu.main]]
+    identifier = "tags"
+    name = "태그"
+    url = "/tags/"
+    weight = 20
+  [[menu.main]]
+    identifier = "search"
+    name = "검색"
+    url = "/search/"
+    weight = 30
+  [[menu.main]]
+    identifier = "about"
+    name = "소개"
+    url = "/about/"
+    weight = 40
+
+# 코드 하이라이팅
+[markup]
+  [markup.highlight]
+    noClasses = false
+    codeFences = true
+    guessSyntax = true
+    lineNos = true
+    style = "monokai"
