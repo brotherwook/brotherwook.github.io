@@ -73,7 +73,7 @@
 </div>
 
 <a id="back" href="/">← 블로그로</a>
-<div id="hint">쓰레기는 끌어서 휴지통에 · 창문은 문질러 닦기 · 빈 곳 드래그로 회전</div>
+<div id="hint">쓰레기 끌어서 휴지통에 · 창문 문질러 닦기 · 스탠드 클릭=불 켜기 · 빈 곳 드래그=회전</div>
 <div id="credit">3D 에셋: <a href="https://kenney.nl" target="_blank" rel="noopener">Kenney</a> (CC0)</div>
 
 <div id="win">
@@ -146,17 +146,19 @@ manager.onError = (u) => console.error('load error:', u);
 const gltf = new GLTFLoader(manager);
 
 // ---------- 조명 ----------
-const hemi = new THREE.HemisphereLight(0xfff1da, 0x4a3a2a, 0.6);
+const hemi = new THREE.HemisphereLight(0xfff1da, 0x4a3a2a, 0.5);
 scene.add(hemi);
-const key = new THREE.DirectionalLight(0xffffff, 0.6);
-key.position.set(6, 10, 8); key.castShadow = true;
-key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=0.5; key.shadow.camera.far=40;
-key.shadow.camera.left=-10; key.shadow.camera.right=10; key.shadow.camera.top=10; key.shadow.camera.bottom=-10;
-key.shadow.bias=-0.0004; scene.add(key);
-const lampLight = new THREE.PointLight(0xffca80, 12, 14, 2);
-lampLight.position.set(-4.0, 2.6, -3.4); scene.add(lampLight);
-// 창문 태양광(청결도에 따라 세짐)
-const sun = new THREE.DirectionalLight(0xffe9c4, 0.0);
+
+// 스탠드 조명 (처음엔 꺼짐, 클릭하면 켜짐) — 그림자는 만들지 않음
+const lampLight = new THREE.PointLight(0xffca80, 16, 15, 2);
+lampLight.position.set(-4.1, 2.7, -3.5); lampLight.visible = false; scene.add(lampLight);
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.16,16,16), new THREE.MeshBasicMaterial({color:0xffe6b0}));
+bulb.position.copy(lampLight.position); bulb.visible = false; scene.add(bulb);
+function toggleLamp(){ lampLight.visible=!lampLight.visible; bulb.visible=lampLight.visible; }
+const lampMeshes = [];
+
+// 창문 태양광 (골든 옐로, 항상 켜져 있지만 창문 얼룩이 가려서 닦은 부분만 통과)
+const sun = new THREE.DirectionalLight(0xffcf66, 3.4);
 sun.position.set(2, 8, -14); sun.target.position.set(-1.4, 0, 1.6);
 sun.castShadow = true; sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.near=0.5; sun.shadow.camera.far=40;
@@ -210,22 +212,15 @@ const dirtCanvas=document.createElement('canvas'); dirtCanvas.width=dirtCanvas.h
 const dirtTex=new THREE.CanvasTexture(dirtCanvas);
 const dirt=new THREE.Mesh(new THREE.PlaneGeometry(winW,winH), new THREE.MeshBasicMaterial({map:dirtTex,transparent:true,depthWrite:false}));
 dirt.position.set(winCx,winCy,backZ+0.09); scene.add(dirt);
-
-// 햇살
-function gradTex(st){const c=document.createElement('canvas');c.width=64;c.height=128;const g=c.getContext('2d');
-  const gr=g.createLinearGradient(0,0,0,128);st.forEach(([o,col])=>gr.addColorStop(o,col));g.fillStyle=gr;g.fillRect(0,0,64,128);return new THREE.CanvasTexture(c);}
-const beam=new THREE.Mesh(new THREE.PlaneGeometry(3.4,7.2), new THREE.MeshBasicMaterial({map:gradTex([[0,'rgba(255,240,200,0.8)'],[1,'rgba(255,240,200,0)']]),transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
-beam.position.set(-0.5,2.6,-1.0); scene.add(beam);
-function radialTex(){const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
-  const gr=g.createRadialGradient(64,64,4,64,64,64);gr.addColorStop(0,'rgba(255,238,198,0.95)');gr.addColorStop(1,'rgba(255,238,198,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);}
-const floorSun=new THREE.Mesh(new THREE.PlaneGeometry(4.6,4.6), new THREE.MeshBasicMaterial({map:radialTex(),transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0}));
-floorSun.rotation.x=-Math.PI/2; floorSun.position.set(-1.4,0.02,1.6); scene.add(floorSun);
+// 얼룩이 남은 부분만 햇빛을 가림 → 닦은 구멍으로만 햇살이 통과 (알파 그림자)
+dirt.castShadow=true;
+dirt.customDepthMaterial=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking, map:dirtTex, alphaTest:0.5, side:THREE.DoubleSide});
 
 // ---------- Kenney 가구 로더 ----------
-function loadModel(file,{x=0,z=0,rotY=0,size=null,baseY=0,cast=true}={}){
+function loadModel(file,{x=0,z=0,rotY=0,size=null,baseY=0,cast=true,pickLamp=false}={}){
   gltf.load(`${KEN}/${file}.glb`, g=>{
     const obj=g.scene;
-    obj.traverse(o=>{ if(o.isMesh){ o.castShadow=cast; o.receiveShadow=true; if(o.material) o.material.envMapIntensity=0.6; }});
+    obj.traverse(o=>{ if(o.isMesh){ o.castShadow=cast; o.receiveShadow=true; if(o.material) o.material.envMapIntensity=0.6; if(pickLamp) lampMeshes.push(o); }});
     obj.rotation.y=rotY;
     let box=new THREE.Box3().setFromObject(obj); const s=new THREE.Vector3(); box.getSize(s);
     const md=Math.max(s.x,s.y,s.z); if(size&&md>0) obj.scale.setScalar(size/md);
@@ -244,7 +239,7 @@ const FURNITURE=[
   {file:'books',           x:-0.4, z:1.5,  rotY:0.3,        size:0.55, baseY:0.42},
   {file:'sideTable',       x:-4.1, z:-1.7, rotY:0,          size:1.0},
   {file:'plantSmall1',     x:-4.1, z:-1.7, rotY:0,          size:0.7, baseY:0.55},
-  {file:'lampRoundFloor',  x:-4.3, z:-3.5, rotY:0,          size:2.4},
+  {file:'lampRoundFloor',  x:-4.3, z:-3.5, rotY:0,          size:2.4, pickLamp:true},
   {file:'bookcaseOpen',    x:-2.7, z:-4.5, rotY:0,          size:2.6},
   {file:'cabinetTelevision',x:1.5, z:-4.4, rotY:0,          size:2.2},
   {file:'televisionModern',x:1.5,  z:-4.5, rotY:0,          size:1.4, baseY:0.85},
@@ -261,7 +256,11 @@ const binRing=new THREE.Mesh(new THREE.RingGeometry(0.85,1.1,32),ringMat); binRi
 // ---------- 쓰레기(저폴리 톤: 플랫·단색) ----------
 const trashMeshes=[]; let trashItems=[]; let remaining=0,total=0;
 const flat=(c,r=0.75)=>new THREE.MeshStandardMaterial({color:c,roughness:r,metalness:0,flatShading:true});
-function mkPaper(){const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.3,0),flat(0xf1ece2,0.95)));g.userData.restY=0.28;return g;}
+function mkPaper(){const g=new THREE.Group();const geo=new THREE.IcosahedronGeometry(0.3,1);
+  const p=geo.attributes.position,v=new THREE.Vector3();
+  for(let i=0;i<p.count;i++){v.fromBufferAttribute(p,i);v.multiplyScalar(1+(Math.random()-0.5)*0.38);p.setXYZ(i,v.x,v.y,v.z);}
+  geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo,flat(0xe6ddc9,0.95)));g.userData.restY=0.28;return g;}
 function mkCan(c){const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22,0.6,10),flat(c,0.5)));g.userData.restY=0.3;g.rotation.z=(Math.random()-0.5)*0.6;return g;}
 function mkBottle(){const g=new THREE.Group();const m=flat(0x5aa15a,0.4);const b=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,0.62,12),m);b.position.y=0.31;const n=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.12,0.26,10),m);n.position.y=0.74;g.add(b,n);g.userData.restY=0;return g;}
 function mkBox(){const g=new THREE.Group();g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7,0.5,0.5),flat(0xcda06a,0.85)));g.userData.restY=0.25;g.rotation.y=Math.random()*Math.PI;return g;}
@@ -291,9 +290,10 @@ function eraseAt(uv){const x=uv.x*256,y=(1-uv.y)*256;dctx.globalCompositeOperati
   dctx.fillStyle=gr;dctx.beginPath();dctx.arc(x,y,26,0,Math.PI*2);dctx.fill();dirtTex.needsUpdate=true;}
 function sampleCleanliness(){const d=dctx.getImageData(0,0,256,256).data;let c=0;for(let i=3;i<d.length;i+=4)if(d[i]<20)c++;cleanliness=c/(d.length/4);updateHUD();}
 function onDown(e){ if(won) return; setPointer(e); raycaster.setFromCamera(pointer,camera);
-  const hits=raycaster.intersectObjects([dirt,...trashMeshes],false); if(!hits.length) return; const f=hits[0];
+  const hits=raycaster.intersectObjects([dirt,...trashMeshes,...lampMeshes],false); if(!hits.length) return; const f=hits[0];
   controls.enabled=false;
   if(f.object===dirt){ wiping=true; if(f.uv) eraseAt(f.uv); renderer.domElement.setPointerCapture?.(e.pointerId); }
+  else if(lampMeshes.includes(f.object)){ toggleLamp(); }  // 스탠드 클릭 → 불 토글
   else{ dragging=f.object.userData.root; ringMat.opacity=0.55; renderer.domElement.setPointerCapture?.(e.pointerId); } }
 function onMove(e){ if(won) return;
   if(wiping){ setPointer(e); raycaster.setFromCamera(pointer,camera); const h=raycaster.intersectObject(dirt,false); if(h.length&&h[0].uv) eraseAt(h[0].uv);
@@ -338,9 +338,7 @@ let composer;
 
 const clock=new THREE.Clock();
 function animate(){ requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),0.05);
-  updateCollecting(dt); const c=cleanliness;
-  sun.intensity=c*2.6; beam.material.opacity=c*0.3; floorSun.material.opacity=c*0.55; glass.material.opacity=0.12+c*0.05;
-  beam.lookAt(camera.position.x,beam.position.y,camera.position.z); controls.update(); composer.render(); }
+  updateCollecting(dt); controls.update(); composer.render(); }
 animate();
 setTimeout(()=>{ loadingEl.style.display='none'; }, 15000);
 
