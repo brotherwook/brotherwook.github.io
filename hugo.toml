@@ -76,10 +76,15 @@ enableEmoji = true
     url = "/search/"
     weight = 30
   [[menu.main]]
+    identifier = "game"
+    name = "🧹 청소게임"
+    url = "/room-cleaner/"
+    weight = 40
+  [[menu.main]]
     identifier = "about"
     name = "소개"
     url = "/about/"
-    weight = 40
+    weight = 50
 
 # 코드 하이라이팅
 [markup]

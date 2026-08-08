@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>방 청소 게임 · brotherwook</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0b0d12;
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; color: #fff;
+    -webkit-user-select: none; user-select: none; touch-action: none; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* HUD */
+  #hud { position: fixed; top: 16px; left: 16px; z-index: 10; max-width: 300px;
+    background: rgba(15,18,26,.72); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 14px 16px; }
+  #hud h1 { font-size: 16px; margin-bottom: 6px; letter-spacing: .3px; }
+  #hud p.desc { font-size: 12px; line-height: 1.55; color: #c8cfda; margin-bottom: 12px; }
+  .stat { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 13px; }
+  .stat .label { width: 78px; color: #aab3c2; }
+  .bar { flex: 1; height: 9px; background: rgba(255,255,255,.12); border-radius: 6px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%; border-radius: 6px; transition: width .25s ease; }
+  #trashBar > i { background: linear-gradient(90deg,#59d98c,#2fb36a); }
+  #winBar > i { background: linear-gradient(90deg,#ffe08a,#ffb13d); }
+  .stat .num { width: 42px; text-align: right; font-variant-numeric: tabular-nums; color:#fff; }
+
+  #back { position: fixed; top: 16px; right: 16px; z-index: 10; font-size: 12px;
+    text-decoration: none; color: #cfd6e2; background: rgba(15,18,26,.72);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 8px 12px; }
+  #back:hover { color:#fff; border-color: rgba(255,255,255,.3); }
+
+  #restart { margin-top: 10px; width: 100%; cursor: pointer; font-size: 12px; color:#fff;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16);
+    border-radius: 9px; padding: 8px; }
+  #restart:hover { background: rgba(255,255,255,.16); }
+
+  #hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 12.5px; color: #dfe4ec; background: rgba(15,18,26,.6);
+    border: 1px solid rgba(255,255,255,.1); border-radius: 999px; padding: 8px 16px; white-space: nowrap; }
+
+  /* 승리 오버레이 */
+  #win { position: fixed; inset: 0; z-index: 20; display: none; place-items: center;
+    background: radial-gradient(circle at 50% 40%, rgba(255,224,138,.18), rgba(6,8,12,.82)); }
+  #win.show { display: grid; animation: fade .6s ease; }
+  #win .card { text-align: center; padding: 8px 20px; }
+  #win h2 { font-size: 34px; margin-bottom: 10px; text-shadow: 0 2px 20px rgba(255,196,80,.5); }
+  #win p { color: #d8dee8; font-size: 14px; margin-bottom: 20px; }
+  #win button { cursor: pointer; font-size: 14px; color:#20242c; font-weight:600;
+    background: linear-gradient(90deg,#ffe08a,#ffb13d); border: none;
+    border-radius: 12px; padding: 12px 26px; }
+  @keyframes fade { from{opacity:0} to{opacity:1} }
+
+  #loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+    background: #0b0d12; color:#9aa3b2; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <h1>🧹 방 청소 게임</h1>
+  <p class="desc">바닥의 쓰레기를 <b>드래그</b>해서 쓰레기통에 넣고,<br>더러운 <b>창문을 문질러</b> 닦아 햇빛을 들이세요.</p>
+  <div class="stat"><span class="label">쓰레기 치움</span>
+    <div class="bar" id="trashBar"><i></i></div><span class="num" id="trashNum">0/0</span></div>
+  <div class="stat"><span class="label">창문 청결도</span>
+    <div class="bar" id="winBar"><i></i></div><span class="num" id="winNum">0%</span></div>
+  <button id="restart">↻ 다시 시작</button>
+</div>
+
+<a id="back" href="/">← 블로그로</a>
+<div id="hint">쓰레기는 끌어서 통에 · 창문은 문질러 닦기</div>
+
+<div id="win">
+  <div class="card">
+    <h2>✨ 청소 완료! ✨</h2>
+    <p>방이 반짝반짝해졌어요. 햇빛이 가득 들어옵니다 ☀️</p>
+    <button onclick="location.reload()">다시 플레이</button>
+  </div>
+</div>
+
+<div id="loading">3D 방을 불러오는 중…</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const appEl = document.getElementById('app');
+const loadingEl = document.getElementById('loading');
+
+// ---------- 렌더러 ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+appEl.appendChild(renderer.domElement);
+
+// ---------- 씬 / 카메라 ----------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0c0e13);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(0, 4.3, 11.3);
+camera.lookAt(0, 2.1, -1);
+
+// ---------- 조명 ----------
+const ambient = new THREE.AmbientLight(0xaab4c8, 0.12);
+scene.add(ambient);
+
+const roomFill = new THREE.PointLight(0xffe6c0, 6, 30, 2);
+roomFill.position.set(0, 5.2, 3);
+scene.add(roomFill);
+
+// 창문(구멍)으로 들어오는 태양광
+const sun = new THREE.DirectionalLight(0xfff2d6, 0.0);
+sun.position.set(2, 8, -14);
+sun.target.position.set(-1.2, 0, 1.8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.5;
+sun.shadow.camera.far = 40;
+sun.shadow.camera.left = -9; sun.shadow.camera.right = 9;
+sun.shadow.camera.top = 9;   sun.shadow.camera.bottom = -9;
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+scene.add(sun.target);
+
+// ---------- 방 구조 ----------
+const ROOM = { w: 10, d: 10, h: 6 };
+const HALF_W = ROOM.w/2, HALF_D = ROOM.d/2;
+
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x8a6b4f, roughness: 0.95 });
+const wallMat  = new THREE.MeshStandardMaterial({ color: 0xd9d2c6, roughness: 1.0 });
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), floorMat);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.w, ROOM.d), wallMat);
+ceiling.rotation.x = Math.PI/2;
+ceiling.position.y = ROOM.h;
+scene.add(ceiling);
+
+const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.d, ROOM.h), wallMat);
+leftWall.rotation.y = Math.PI/2;
+leftWall.position.set(-HALF_W, ROOM.h/2, 0);
+leftWall.receiveShadow = true;
+scene.add(leftWall);
+
+const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.d, ROOM.h), wallMat);
+rightWall.rotation.y = -Math.PI/2;
+rightWall.position.set(HALF_W, ROOM.h/2, 0);
+rightWall.receiveShadow = true;
+scene.add(rightWall);
+
+// 뒷벽 + 창문 구멍 (창문 영역: x[-2,2], y[2,4.5])
+const WIN = { x0:-2, x1:2, y0:2, y1:4.5 };
+const backZ = -HALF_D;
+function backSeg(w, h, cx, cy) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.25), wallMat);
+  m.position.set(cx, cy, backZ);
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m);
+}
+backSeg(ROOM.w, WIN.y0, 0, WIN.y0/2);                         // 창문 아래
+backSeg(ROOM.w, ROOM.h-WIN.y1, 0, (WIN.y1+ROOM.h)/2);         // 창문 위
+backSeg(HALF_W+WIN.x0, WIN.y1-WIN.y0, (-HALF_W+WIN.x0)/2, (WIN.y0+WIN.y1)/2); // 창문 왼쪽
+backSeg(HALF_W-WIN.x1, WIN.y1-WIN.y0, (HALF_W+WIN.x1)/2,  (WIN.y0+WIN.y1)/2); // 창문 오른쪽
+
+// ---------- 창밖 풍경(밝은 하늘) ----------
+const skyCanvas = document.createElement('canvas');
+skyCanvas.width = 256; skyCanvas.height = 256;
+(() => {
+  const g = skyCanvas.getContext('2d');
+  const grad = g.createLinearGradient(0,0,0,256);
+  grad.addColorStop(0, '#8fc7ff'); grad.addColorStop(0.6,'#cfe8ff'); grad.addColorStop(1,'#eaf6ff');
+  g.fillStyle = grad; g.fillRect(0,0,256,256);
+  g.fillStyle = 'rgba(255,244,214,0.95)';
+  g.beginPath(); g.arc(180, 70, 34, 0, Math.PI*2); g.fill();
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  for (const [x,y,r] of [[60,120,20],[95,128,26],[130,122,18]]) { g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill(); }
+})();
+const skyTex = new THREE.CanvasTexture(skyCanvas);
+const winW = WIN.x1-WIN.x0, winH = WIN.y1-WIN.y0, winCx = (WIN.x0+WIN.x1)/2, winCy = (WIN.y0+WIN.y1)/2;
+const sky = new THREE.Mesh(
+  new THREE.PlaneGeometry(winW+0.4, winH+0.4),
+  new THREE.MeshBasicMaterial({ map: skyTex })
+);
+sky.position.set(winCx, winCy, backZ-0.3);
+scene.add(sky);
+
+// 유리
+const glass = new THREE.Mesh(
+  new THREE.PlaneGeometry(winW, winH),
+  new THREE.MeshStandardMaterial({ color: 0xbfe0ff, transparent:true, opacity:0.14, roughness:0.1, metalness:0 })
+);
+glass.position.set(winCx, winCy, backZ+0.02);
+scene.add(glass);
+
+// 창문 때(더러움) - 지울 수 있는 캔버스 텍스처
+const dirtCanvas = document.createElement('canvas');
+dirtCanvas.width = 256; dirtCanvas.height = 256;
+const dctx = dirtCanvas.getContext('2d');
+function paintDirt() {
+  dctx.globalCompositeOperation = 'source-over';
+  dctx.clearRect(0,0,256,256);
+  dctx.fillStyle = '#5c5238';
+  dctx.fillRect(0,0,256,256);
+  // 얼룩 노이즈
+  for (let i=0; i<900; i++) {
+    const x = Math.random()*256, y = Math.random()*256, r = Math.random()*10+2;
+    const shade = 40 + Math.random()*60;
+    dctx.fillStyle = `rgba(${shade-10},${shade},${shade-25},${0.15+Math.random()*0.3})`;
+    dctx.beginPath(); dctx.arc(x,y,r,0,Math.PI*2); dctx.fill();
+  }
+  dctx.fillStyle = 'rgba(90,80,55,0.5)';
+  for (let i=0;i<40;i++){ const x=Math.random()*256; dctx.fillRect(x, 0, 1+Math.random()*2, 256); }
+}
+paintDirt();
+const dirtTex = new THREE.CanvasTexture(dirtCanvas);
+const dirt = new THREE.Mesh(
+  new THREE.PlaneGeometry(winW, winH),
+  new THREE.MeshBasicMaterial({ map: dirtTex, transparent:true, depthWrite:false })
+);
+dirt.position.set(winCx, winCy, backZ+0.05);
+scene.add(dirt);
+
+// ---------- 햇빛 줄기(빌보드) & 바닥 광원 패치 ----------
+function makeGradTex(stops) {
+  const c = document.createElement('canvas'); c.width=64; c.height=128;
+  const g = c.getContext('2d'); const grad = g.createLinearGradient(0,0,0,128);
+  stops.forEach(([o,col]) => grad.addColorStop(o,col));
+  g.fillStyle = grad; g.fillRect(0,0,64,128);
+  return new THREE.CanvasTexture(c);
+}
+const beamTex = makeGradTex([[0,'rgba(255,244,204,0.9)'],[1,'rgba(255,244,204,0)']]);
+const beam = new THREE.Mesh(
+  new THREE.PlaneGeometry(3.2, 7),
+  new THREE.MeshBasicMaterial({ map: beamTex, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0 })
+);
+beam.position.set(-0.4, 2.6, -1.2);
+scene.add(beam);
+
+function makeRadialTex() {
+  const c = document.createElement('canvas'); c.width=128; c.height=128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64,64,4,64,64,64);
+  grad.addColorStop(0,'rgba(255,240,200,0.9)'); grad.addColorStop(1,'rgba(255,240,200,0)');
+  g.fillStyle = grad; g.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+const floorSun = new THREE.Mesh(
+  new THREE.PlaneGeometry(4.2, 4.2),
+  new THREE.MeshBasicMaterial({ map: makeRadialTex(), transparent:true, blending:THREE.AdditiveBlending, depthWrite:false, opacity:0 })
+);
+floorSun.rotation.x = -Math.PI/2;
+floorSun.position.set(-1.2, 0.03, 1.8);
+scene.add(floorSun);
+
+// ---------- 쓰레기통 ----------
+const binGroup = new THREE.Group();
+const BIN = { x: 3.4, z: -3.2, r: 1.15 };
+const binMat = new THREE.MeshStandardMaterial({ color: 0x4a5560, roughness:0.5, metalness:0.5 });
+const binBody = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.62, 1.4, 28, 1, true), binMat);
+binBody.position.y = 0.7; binBody.castShadow = true; binBody.receiveShadow = true;
+const binBottom = new THREE.Mesh(new THREE.CircleGeometry(0.62, 28), new THREE.MeshStandardMaterial({color:0x2b3138, roughness:0.8}));
+binBottom.rotation.x = -Math.PI/2; binBottom.position.y = 0.02;
+const binRim = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.06, 12, 28), binMat);
+binRim.rotation.x = Math.PI/2; binRim.position.y = 1.4;
+binGroup.add(binBody, binBottom, binRim);
+binGroup.position.set(BIN.x, 0, BIN.z);
+scene.add(binGroup);
+
+// 쓰레기통 안내 링
+const ringMat = new THREE.MeshBasicMaterial({ color:0x59d98c, transparent:true, opacity:0.0, side:THREE.DoubleSide });
+const binRing = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.15, 32), ringMat);
+binRing.rotation.x = -Math.PI/2; binRing.position.set(BIN.x, 0.04, BIN.z);
+scene.add(binRing);
+
+// ---------- 쓰레기 생성 ----------
+const trashMeshes = [];   // 레이캐스트 대상 (자식 메쉬)
+let trashItems = [];      // 루트 그룹들
+let remaining = 0, total = 0;
+
+function mkPaper() {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0),
+    new THREE.MeshStandardMaterial({ color: 0xefe9df, roughness:0.95, flatShading:true }));
+  g.add(m); g.userData.restY = 0.3; return g;
+}
+function mkCan(col) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.23,0.23,0.62,20),
+    new THREE.MeshStandardMaterial({ color: col, roughness:0.3, metalness:0.7 }));
+  g.add(body); g.userData.restY = 0.31;
+  g.rotation.z = (Math.random()-0.5)*0.5; return g;
+}
+function mkBottle() {
+  const g = new THREE.Group();
+  const glassMat = new THREE.MeshStandardMaterial({ color:0x4a8f4a, roughness:0.2, metalness:0.1, transparent:true, opacity:0.85 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.19,0.66,18), glassMat); body.position.y=0.33;
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.13,0.28,14), glassMat); neck.position.y=0.78;
+  g.add(body, neck); g.userData.restY = 0.0; return g;
+}
+function mkBox() {
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.95,0.16,0.95),
+    new THREE.MeshStandardMaterial({ color: 0xcda76b, roughness:0.9 }));
+  g.add(m); g.userData.restY = 0.08; g.rotation.y = Math.random()*Math.PI; return g;
+}
+
+const CANS = [0xd23b3b, 0x2f6fd2, 0x2fb36a, 0xe0a520];
+function buildTrash() {
+  const defs = [mkPaper(), mkPaper(), mkPaper(),
+    mkCan(CANS[0]), mkCan(CANS[1]), mkCan(CANS[2]),
+    mkBottle(), mkBottle(), mkBox()];
+  const placed = [];
+  for (const g of defs) {
+    let x, z, tries = 0;
+    do {
+      x = (Math.random()*2-1) * (HALF_W-1.1);
+      z = (Math.random()*2-1) * (HALF_D-1.1);
+      tries++;
+    } while (tries < 40 && (
+      Math.hypot(x-BIN.x, z-BIN.z) < 1.8 ||
+      placed.some(p => Math.hypot(x-p.x, z-p.z) < 1.2)
+    ));
+    placed.push({x, z});
+    g.position.set(x, g.userData.restY, z);
+    g.traverse(o => { if (o.isMesh) { o.castShadow = true; o.userData.root = g; trashMeshes.push(o); } });
+    g.userData.pickable = true;
+    scene.add(g); trashItems.push(g);
+  }
+  total = trashItems.length; remaining = total;
+  updateHUD();
+}
+
+// ---------- 상호작용 ----------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const dragPlane = new THREE.Plane(new THREE.Vector3(0,1,0), -0.9); // y = 0.9
+const hitPoint = new THREE.Vector3();
+
+let dragging = null;      // 현재 끌고 있는 쓰레기 그룹
+let wiping = false;
+let cleanliness = 0;      // 0~1
+let lastSample = 0;
+let won = false;
+
+function setPointer(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  pointer.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+}
+
+function eraseAt(uv) {
+  const x = uv.x * dirtCanvas.width;
+  const y = (1 - uv.y) * dirtCanvas.height;
+  dctx.globalCompositeOperation = 'destination-out';
+  const grd = dctx.createRadialGradient(x,y,0,x,y,26);
+  grd.addColorStop(0,'rgba(0,0,0,1)'); grd.addColorStop(0.7,'rgba(0,0,0,0.9)'); grd.addColorStop(1,'rgba(0,0,0,0)');
+  dctx.fillStyle = grd;
+  dctx.beginPath(); dctx.arc(x,y,26,0,Math.PI*2); dctx.fill();
+  dirtTex.needsUpdate = true;
+}
+
+function sampleCleanliness() {
+  const img = dctx.getImageData(0,0,dirtCanvas.width,dirtCanvas.height).data;
+  let clear = 0;
+  for (let i=3; i<img.length; i+=4) if (img[i] < 20) clear++;
+  cleanliness = clear / (img.length/4);
+  updateHUD();
+}
+
+function onDown(e) {
+  if (won) return;
+  setPointer(e);
+  raycaster.setFromCamera(pointer, camera);
+  const targets = [dirt, ...trashMeshes];
+  const hits = raycaster.intersectObjects(targets, false);
+  if (!hits.length) return;
+  const first = hits[0];
+  if (first.object === dirt) {
+    wiping = true;
+    if (first.uv) eraseAt(first.uv);
+    renderer.domElement.setPointerCapture?.(e.pointerId);
+  } else {
+    dragging = first.object.userData.root;
+    dragging.userData.pickable = false;
+    ringMat.opacity = 0.5;
+    renderer.domElement.setPointerCapture?.(e.pointerId);
+  }
+}
+
+function onMove(e) {
+  if (won) return;
+  if (wiping) {
+    setPointer(e);
+    raycaster.setFromCamera(pointer, camera);
+    const h = raycaster.intersectObject(dirt, false);
+    if (h.length && h[0].uv) eraseAt(h[0].uv);
+    const now = performance.now();
+    if (now - lastSample > 110) { lastSample = now; sampleCleanliness(); checkWin(); }
+  } else if (dragging) {
+    setPointer(e);
+    raycaster.setFromCamera(pointer, camera);
+    if (raycaster.ray.intersectPlane(dragPlane, hitPoint)) {
+      const x = THREE.MathUtils.clamp(hitPoint.x, -HALF_W+0.4, HALF_W-0.4);
+      const z = THREE.MathUtils.clamp(hitPoint.z, -HALF_D+0.4, HALF_D-0.4);
+      dragging.position.x = x; dragging.position.z = z;
+      dragging.position.y = 0.9;
+    }
+  }
+}
+
+function onUp(e) {
+  if (wiping) { wiping = false; sampleCleanliness(); checkWin(); return; }
+  if (!dragging) return;
+  const d = Math.hypot(dragging.position.x - BIN.x, dragging.position.z - BIN.z);
+  ringMat.opacity = 0.0;
+  if (d < BIN.r) {
+    dragging.userData.collecting = true;   // 통에 들어감
+  } else {
+    dragging.position.y = dragging.userData.restY; // 제자리로
+    dragging.userData.pickable = true;
+  }
+  dragging = null;
+}
+
+renderer.domElement.addEventListener('pointerdown', onDown);
+renderer.domElement.addEventListener('pointermove', onMove);
+window.addEventListener('pointerup', onUp);
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---------- 수거 애니메이션 & 승리 ----------
+function updateCollecting(dt) {
+  for (let i = trashItems.length-1; i >= 0; i--) {
+    const g = trashItems[i];
+    if (!g.userData.collecting) continue;
+    const target = new THREE.Vector3(BIN.x, 1.5, BIN.z);
+    g.position.lerp(target, Math.min(1, dt*6));
+    const s = Math.max(0.001, g.scale.x - dt*2.2);
+    g.scale.setScalar(s);
+    if (g.position.distanceTo(target) < 0.25 || s <= 0.02) {
+      scene.remove(g);
+      // trashMeshes에서 제거
+      g.traverse(o => { const idx = trashMeshes.indexOf(o); if (idx>=0) trashMeshes.splice(idx,1); });
+      trashItems.splice(i,1);
+      remaining--;
+      updateHUD(); checkWin();
+    }
+  }
+}
+
+function checkWin() {
+  if (!won && remaining === 0 && cleanliness >= 0.85) {
+    won = true;
+    document.getElementById('win').classList.add('show');
+  }
+}
+
+// ---------- HUD ----------
+const trashBar = document.querySelector('#trashBar > i');
+const winBar   = document.querySelector('#winBar > i');
+const trashNum = document.getElementById('trashNum');
+const winNum   = document.getElementById('winNum');
+function updateHUD() {
+  const cleared = total - remaining;
+  trashBar.style.width = (total ? cleared/total*100 : 0) + '%';
+  trashNum.textContent = cleared + '/' + total;
+  winBar.style.width = Math.round(cleanliness*100) + '%';
+  winNum.textContent = Math.round(cleanliness*100) + '%';
+}
+document.getElementById('restart').addEventListener('click', () => location.reload());
+
+// 쓰레기 배치 (HUD 준비 후 실행)
+buildTrash();
+
+// ---------- 렌더 루프 ----------
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  updateCollecting(dt);
+
+  // 청결도 → 밝기/햇빛 반영
+  const c = cleanliness;
+  ambient.intensity = 0.12 + c*0.55;
+  sun.intensity = c * 2.6;
+  scene.background.setRGB(0.047+ c*0.06, 0.055+ c*0.07, 0.075+ c*0.08);
+  beam.material.opacity = c * 0.28;
+  floorSun.material.opacity = c * 0.5;
+  dirt.material.opacity = 1.0; // 알파는 텍스처가 관리
+  glass.material.opacity = 0.14 + c*0.05;
+
+  // 빔 빌보드 (항상 카메라를 바라보게)
+  beam.lookAt(camera.position.x, beam.position.y, camera.position.z);
+
+  renderer.render(scene, camera);
+}
+
+// 첫 프레임 후 로딩 제거
+requestAnimationFrame(() => { loadingEl.style.display = 'none'; animate(); });
+
+// ---------- 리사이즈 ----------
+function resizeNow() {
+  const w = window.innerWidth || document.documentElement.clientWidth || 1;
+  const h = window.innerHeight || document.documentElement.clientHeight || 1;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener('resize', resizeNow);
+// 백그라운드로 로드된 뒤 창이 표시될 때 크기 재보정
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resizeNow(); });
+</script>
+</body>
+</html>
