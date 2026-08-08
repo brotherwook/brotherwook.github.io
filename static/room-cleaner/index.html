@@ -102,6 +102,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const ASSETS = 'assets';
 const loadingEl = document.getElementById('loading');
@@ -129,6 +130,7 @@ scene.background = new THREE.CanvasTexture(bgCanvas);
 const camera = new THREE.PerspectiveCamera(40, (window.innerWidth||1)/(window.innerHeight||1), 0.1, 100);
 camera.position.set(10, 9, 10);
 camera.lookAt(-0.4, 1.2, -0.4);
+let controls; // OrbitControls (아래에서 생성)
 
 // ---------- 로딩 매니저 & 로더 ----------
 const manager = new THREE.LoadingManager();
@@ -306,6 +308,7 @@ function eraseAt(uv){ const x=uv.x*256,y=(1-uv.y)*256; dctx.globalCompositeOpera
 function sampleCleanliness(){ const d=dctx.getImageData(0,0,256,256).data; let c=0; for(let i=3;i<d.length;i+=4) if(d[i]<20) c++; cleanliness=c/(d.length/4); updateHUD(); }
 function onDown(e){ if(won) return; setPointer(e); raycaster.setFromCamera(pointer,camera);
   const hits=raycaster.intersectObjects([dirt,...trashMeshes],false); if(!hits.length) return; const f=hits[0];
+  controls.enabled=false; // 오브젝트를 잡는 동안엔 카메라 회전 정지
   if(f.object===dirt){ wiping=true; if(f.uv) eraseAt(f.uv); renderer.domElement.setPointerCapture?.(e.pointerId); }
   else{ dragging=f.object.userData.root; ringMat.opacity=0.55; renderer.domElement.setPointerCapture?.(e.pointerId); } }
 function onMove(e){ if(won) return;
@@ -314,13 +317,23 @@ function onMove(e){ if(won) return;
   else if(dragging){ setPointer(e); raycaster.setFromCamera(pointer,camera);
     if(raycaster.ray.intersectPlane(dragPlane,hitPoint)){ dragging.position.x=THREE.MathUtils.clamp(hitPoint.x,-HALF_W+0.4,HALF_W-0.4);
       dragging.position.z=THREE.MathUtils.clamp(hitPoint.z,-HALF_D+0.4,HALF_D-0.4); dragging.position.y=0.9; } } }
-function onUp(){ if(wiping){wiping=false; sampleCleanliness(); checkWin(); return;} if(!dragging) return;
+function onUp(){ controls.enabled=true; // 손 떼면 카메라 회전 재개
+  if(wiping){wiping=false; sampleCleanliness(); checkWin(); return;} if(!dragging) return;
   const d=Math.hypot(dragging.position.x-BIN.x,dragging.position.z-BIN.z); ringMat.opacity=0.0;
   if(d<BIN.r) dragging.userData.collecting=true; else dragging.position.y=dragging.userData.restY; dragging=null; }
 renderer.domElement.addEventListener('pointerdown',onDown);
 renderer.domElement.addEventListener('pointermove',onMove);
 window.addEventListener('pointerup',onUp);
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+
+// 카메라 컨트롤: 드래그 회전 + 휠 줌 (최소/최대 거리 제한)
+controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(-0.4, 1.4, -0.4);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 7;   controls.maxDistance = 24;   // 줌 최대/최소
+controls.minPolarAngle = 0.15; controls.maxPolarAngle = 1.45; // 바닥 아래로 못 내려가게
+controls.update();
 
 function updateCollecting(dt){ for(let i=trashItems.length-1;i>=0;i--){ const g=trashItems[i]; if(!g.userData.collecting) continue;
   const target=new THREE.Vector3(BIN.x,1.5,BIN.z); g.position.lerp(target,Math.min(1,dt*6)); const s=Math.max(0.001,g.scale.x-dt*2.2); g.scale.setScalar(s);
@@ -347,7 +360,7 @@ const clock=new THREE.Clock();
 function animate(){ requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),0.05);
   updateCollecting(dt); const c=cleanliness;
   hemi.intensity=0.25+c*0.5; sun.intensity=c*3.0; beam.material.opacity=c*0.3; floorSun.material.opacity=c*0.55; glass.material.opacity=0.12+c*0.05;
-  beam.lookAt(camera.position.x,beam.position.y,camera.position.z); composer.render(); }
+  beam.lookAt(camera.position.x,beam.position.y,camera.position.z); controls.update(); composer.render(); }
 animate();
 
 // 안전장치: 매니저가 15초 내 못 끝내도 로딩 화면 제거
