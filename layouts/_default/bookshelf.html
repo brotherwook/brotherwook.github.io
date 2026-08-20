@@ -1,0 +1,500 @@
+{{- $books := slice -}}
+{{- range (where site.RegularPages "Type" "posts").ByDate.Reverse -}}
+  {{- $thumb := "" -}}
+  {{- with .Params.cover }}{{ with .image }}{{ $thumb = . }}{{ end }}{{ end -}}
+  {{- if not $thumb }}{{ with .Params.thumbnail }}{{ $thumb = . }}{{ end }}{{ end -}}
+  {{- if not $thumb }}{{ with .Params.images }}{{ if gt (len .) 0 }}{{ $thumb = index . 0 }}{{ end }}{{ end }}{{ end -}}
+  {{- if not $thumb -}}
+    {{- $mm := findRESubmatch `<img[^>]+src="([^"]+)"` .Content -}}
+    {{- if gt (len $mm) 0 }}{{ $thumb = index (index $mm 0) 1 }}{{ end -}}
+  {{- end -}}
+  {{- if $thumb }}{{ if not (or (hasPrefix $thumb "http") (hasPrefix $thumb "/")) }}{{ $thumb = printf "%s%s" .RelPermalink $thumb }}{{ end }}{{ end -}}
+  {{- if not $thumb }}{{ $thumb = "/images/book-default.svg" }}{{ end -}}
+  {{- $sum := .Summary | plainify | htmlUnescape -}}
+  {{- $books = $books | append (dict "title" .Title "url" .RelPermalink "date" (.Date.Format "2006.01.02") "summary" $sum "thumb" $thumb) -}}
+{{- end -}}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>📚 책장 · {{ site.Title }}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1c1611;
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; color: #fff;
+    -webkit-user-select: none; user-select: none; touch-action: none; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #title { position: fixed; top: 16px; left: 16px; z-index: 10; max-width: 330px;
+    background: rgba(40,30,22,.62); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,225,190,.16); border-radius: 16px; padding: 14px 18px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+  #title h1 { font-size: 16px; letter-spacing: .3px; margin-bottom: 5px; }
+  #title p { font-size: 12px; line-height: 1.6; color: #e6d6c4; }
+
+  #back { position: fixed; top: 16px; right: 16px; z-index: 10; font-size: 12px;
+    text-decoration: none; color: #e6d6c4; background: rgba(40,30,22,.62);
+    border: 1px solid rgba(255,225,190,.16); border-radius: 12px; padding: 9px 13px; }
+  #back:hover { color:#fff; border-color: rgba(255,225,190,.4); }
+
+  #label { position: fixed; z-index: 12; pointer-events: none; display: none;
+    transform: translate(-50%, -140%); white-space: nowrap; max-width: 260px; overflow: hidden;
+    text-overflow: ellipsis; background: rgba(20,15,10,.85); border: 1px solid rgba(255,214,140,.35);
+    color: #ffe9c8; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.4); }
+
+  /* 읽기 모드 컨트롤 */
+  #reader { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 14;
+    display: none; align-items: center; gap: 10px; }
+  #reader.show { display: flex; }
+  #reader button, #reader a { cursor: pointer; font-size: 13px; font-weight: 600; color: #f0e2cf;
+    background: rgba(40,30,22,.8); border: 1px solid rgba(255,225,190,.22); border-radius: 12px;
+    padding: 11px 16px; text-decoration: none; transition: background .15s, border-color .15s; }
+  #reader button:hover, #reader a:hover { background: rgba(60,45,32,.9); border-color: rgba(255,225,190,.5); }
+  #reader button:disabled { opacity: .35; cursor: default; }
+  #reader .go { color: #2a1f16; background: linear-gradient(90deg,#ffdf9e,#ffb04a); border: none; }
+  #reader .go:hover { filter: brightness(1.07); }
+  #reader .pageno { font-size: 12px; color: #c9b8a5; min-width: 52px; text-align: center; }
+
+  #hint { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 9;
+    font-size: 12.5px; color: #efe3d5; background: rgba(40,30,22,.55);
+    border: 1px solid rgba(255,225,190,.14); border-radius: 999px; padding: 9px 18px; white-space: nowrap; }
+  #hint.hide { display: none; }
+
+  #empty { position: fixed; inset: 0; z-index: 8; display: none; place-items: center; text-align: center;
+    color: #c9b299; font-size: 15px; }
+
+  #credit { position: fixed; bottom: 12px; right: 14px; z-index: 9; font-size: 10.5px; color: rgba(233,219,197,.5); }
+
+  #loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+    background: #1c1611; color:#c9b299; font-size: 14px; text-align:center; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="title">
+  <h1>📚 나의 책장</h1>
+  <p>글 하나가 책 한 권이에요. 책에 마우스를 올리면 살짝 나오고, <b>클릭</b>하면 펼쳐집니다.</p>
+</div>
+<a id="back" href="/">← 블로그로</a>
+
+<div id="label"></div>
+
+<div id="reader">
+  <button id="prevBtn">◀ 이전</button>
+  <span class="pageno" id="pageno">1 / 1</span>
+  <button id="nextBtn">다음 ▶</button>
+  <a class="go" id="goBtn" href="#">글 보러가기 →</a>
+  <button id="closeBtn">✕ 책장으로</button>
+</div>
+
+<div id="hint">🖱️ 드래그로 둘러보기 · 휠로 확대 · 책 클릭</div>
+<div id="empty">📭 아직 작성된 글이 없어요.<br>글을 쓰면 이 책장에 책이 한 권씩 꽂힙니다.</div>
+<div id="credit">three.js</div>
+<div id="loading">📚 책장을 정리하는 중…</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script>
+  // Hugo가 빌드 시 모든 글을 여기에 주입합니다. (글을 쓰면 자동으로 책이 늘어남)
+  window.__BOOKS = {{ $books | jsonify | safeJS }};
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const BOOKS = Array.isArray(window.__BOOKS) ? window.__BOOKS : [];
+const loadingEl = document.getElementById('loading');
+const labelEl = document.getElementById('label');
+
+if (BOOKS.length === 0) {
+  loadingEl.style.display = 'none';
+  document.getElementById('empty').style.display = 'grid';
+}
+
+// ---------- 렌더러 / 씬 / 카메라 ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth||1, window.innerHeight||1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const bgCanvas = document.createElement('canvas'); bgCanvas.width = bgCanvas.height = 512;
+(() => { const g=bgCanvas.getContext('2d');
+  const gr=g.createRadialGradient(256,210,40,256,256,380);
+  gr.addColorStop(0,'#3d3025'); gr.addColorStop(0.55,'#271d14'); gr.addColorStop(1,'#120c07');
+  g.fillStyle=gr; g.fillRect(0,0,512,512); })();
+scene.background = new THREE.CanvasTexture(bgCanvas);
+
+const camera = new THREE.PerspectiveCamera(42, (window.innerWidth||1)/(window.innerHeight||1), 0.1, 200);
+
+// ---------- 조명 ----------
+scene.add(new THREE.HemisphereLight(0xfff1da, 0x40342a, 0.85));
+const key = new THREE.DirectionalLight(0xffe6bd, 1.7);
+key.position.set(5, 11, 9); key.castShadow = true;
+key.shadow.mapSize.set(2048,2048); key.shadow.camera.near=0.5; key.shadow.camera.far=60;
+key.shadow.camera.left=-16; key.shadow.camera.right=16; key.shadow.camera.top=16; key.shadow.camera.bottom=-16;
+key.shadow.bias=-0.0004; scene.add(key);
+const fill = new THREE.PointLight(0xffcaa0, 0.5, 40); fill.position.set(-6,6,10); scene.add(fill);
+
+// ---------- 책장(가구) ----------
+const wood  = (c,r=0.72)=>new THREE.MeshStandardMaterial({color:c, roughness:r, metalness:0.02});
+const PER_SHELF = 9;
+const SLOT = 0.62;                 // 책 한 권이 차지하는 가로 폭
+const ROW_GAP = 2.1;               // 선반 사이 세로 간격
+const ROWS = Math.max(3, Math.ceil(BOOKS.length / PER_SHELF));
+const INNER_W = PER_SHELF * SLOT + 0.5;
+const SHELF_H = ROWS * ROW_GAP + 0.6;
+const BOTTOM_Y = 1.0;              // 맨 아래 선반 윗면 높이
+
+const shelfGroup = new THREE.Group(); scene.add(shelfGroup);
+// 뒷판
+const backPanel = new THREE.Mesh(new THREE.BoxGeometry(INNER_W+0.6, SHELF_H, 0.25), wood(0x6f5137,0.85));
+backPanel.position.set(0, BOTTOM_Y + SHELF_H/2 - 0.4, -0.75); backPanel.receiveShadow=true; shelfGroup.add(backPanel);
+// 좌우 기둥
+for (const sx of [-(INNER_W/2+0.25), (INNER_W/2+0.25)]) {
+  const side = new THREE.Mesh(new THREE.BoxGeometry(0.3, SHELF_H, 1.5), wood(0x7a5a3c));
+  side.position.set(sx, BOTTOM_Y + SHELF_H/2 - 0.4, -0.1); side.castShadow=side.receiveShadow=true; shelfGroup.add(side);
+}
+// 선반 판(각 행 아래 + 맨 위)
+for (let r=0; r<=ROWS; r++) {
+  const board = new THREE.Mesh(new THREE.BoxGeometry(INNER_W+0.6, 0.18, 1.5), wood(0x86643f));
+  board.position.set(0, BOTTOM_Y + r*ROW_GAP - 0.09, -0.1); board.castShadow=board.receiveShadow=true; shelfGroup.add(board);
+}
+
+// ---------- 책 ----------
+const SPINE_PALETTE = [0xb5493f,0x3f6fa8,0x4a8c63,0xb98336,0x7a5aa0,0xc06a86,0x2f8a8a,0x8a6d3b,0x556b8d,0xa0553f];
+function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h=(h*31 + s.charCodeAt(i))|0; } return Math.abs(h); }
+
+function wrapText(ctx, text, maxW){
+  const out=[]; let line='';
+  for (const ch of text){
+    if (ch==='\n'){ out.push(line); line=''; continue; }
+    const t=line+ch;
+    if (ctx.measureText(t).width > maxW && line){ out.push(line); line=ch; }
+    else line=t;
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+function makeSpineTexture(title, color){
+  const c=document.createElement('canvas'); c.width=140; c.height=420; const g=c.getContext('2d');
+  const col='#'+color.toString(16).padStart(6,'0');
+  g.fillStyle=col; g.fillRect(0,0,140,420);
+  // 위/아래 장식 밴드
+  g.fillStyle='rgba(255,255,255,.16)'; g.fillRect(0,26,140,7); g.fillRect(0,387,140,7);
+  g.fillStyle='rgba(0,0,0,.14)'; g.fillRect(0,0,10,420); g.fillRect(130,0,10,420);
+  // 세로 제목
+  g.save(); g.translate(70,210); g.rotate(-Math.PI/2);
+  g.fillStyle='rgba(255,248,236,.96)'; g.font='700 30px "Malgun Gothic", sans-serif';
+  g.textAlign='center'; g.textBaseline='middle';
+  const lines = wrapText(g, title, 300).slice(0,2);
+  const lh=34, y0=-(lines.length-1)*lh/2;
+  lines.forEach((ln,i)=> g.fillText(ln, 0, y0 + i*lh));
+  g.restore();
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace; tex.anisotropy=4; return tex;
+}
+
+const bookMeshes = [];
+BOOKS.forEach((b, i) => {
+  const row = Math.floor(i / PER_SHELF);
+  const col = i % PER_SHELF;
+  const color = SPINE_PALETTE[hashStr(b.title) % SPINE_PALETTE.length];
+  const h = 1.55 + ((hashStr(b.title)>>3)%5)*0.06;   // 1.55~1.79
+  const depth = 1.15;
+  const spineTex = makeSpineTexture(b.title, color);
+  const plain = wood(color, 0.55);
+  const spineMat = new THREE.MeshStandardMaterial({ map:spineTex, roughness:0.5 });
+  // BoxGeometry 면 순서: px, nx, py, ny, pz, nz  → 앞면(pz)=책등(제목)
+  const mats = [plain, plain, wood(0xf3ead9,0.9), plain, spineMat, plain];
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(SLOT-0.08, h, depth), mats);
+  const x = -INNER_W/2 + SLOT/2 + col*SLOT;
+  const y = BOTTOM_Y + (ROWS-1-row)*ROW_GAP + h/2;   // 위 행부터 채움(최신이 위)
+  const z = 0.0;
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.userData = { book:b, base:mesh.position.clone(), hover:0, mats };
+  scene.add(mesh); bookMeshes.push(mesh);
+});
+
+// 카메라 초기 위치: 책장 전체가 보이도록
+const shelfCenterY = BOTTOM_Y + (SHELF_H-0.4)/2;
+const SHELF_POSE = { pos:new THREE.Vector3(0, shelfCenterY+1.2, INNER_W*1.35 + 6), tgt:new THREE.Vector3(0, shelfCenterY, 0) };
+const READ_POSE  = { pos:new THREE.Vector3(0, shelfCenterY, INNER_W*1.35 + 6.9), tgt:new THREE.Vector3(0, shelfCenterY, 3.2) };
+camera.position.copy(SHELF_POSE.pos);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.copy(SHELF_POSE.tgt);
+controls.enableDamping = true; controls.dampingFactor = 0.08; controls.enablePan = false;
+controls.minDistance = 5; controls.maxDistance = INNER_W*1.6 + 12;
+controls.minPolarAngle = 0.25; controls.maxPolarAngle = 1.5;
+controls.update();
+
+// ============================================================
+//  펼친 책(읽기 모드)
+// ============================================================
+const PAGE_W = 2.4, PAGE_H = 3.2;
+const openBook = new THREE.Group();
+openBook.position.set(0, shelfCenterY, 3.2);
+openBook.rotation.x = -0.12;
+openBook.visible = false;
+scene.add(openBook);
+
+// 표지(뒷판)
+const coverBoard = new THREE.Mesh(new THREE.BoxGeometry(PAGE_W*2+0.3, PAGE_H+0.22, 0.16), wood(0x5b4a34,0.6));
+coverBoard.position.z = -0.12; openBook.add(coverBoard);
+
+function makePageMat(){ const c=document.createElement('canvas'); c.width=512; c.height=680;
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace; tex.anisotropy=4;
+  const mat=new THREE.MeshStandardMaterial({ map:tex, roughness:0.9 });
+  return { c, tex, mat }; }
+const leftPage = makePageMat(), rightPage = makePageMat();
+const lMesh = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W, PAGE_H), leftPage.mat);
+lMesh.position.set(-PAGE_W/2 - 0.02, 0, 0.02); openBook.add(lMesh);
+const rMesh = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W, PAGE_H), rightPage.mat);
+rMesh.position.set( PAGE_W/2 + 0.02, 0, 0.02); openBook.add(rMesh);
+
+// 넘어가는 페이지(애니메이션용) — 스파인(x=0) 기준 회전
+const turnPivot = new THREE.Group(); openBook.add(turnPivot);
+const turnPage = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W, PAGE_H),
+  new THREE.MeshStandardMaterial({ color:0xf3ead9, roughness:0.9, side:THREE.DoubleSide }));
+turnPage.position.set(PAGE_W/2 + 0.02, 0, 0.04); turnPivot.add(turnPage); turnPivot.visible=false;
+
+// ---- 페이지 그리기 ----
+function drawPage(ctx, page, book, img){
+  ctx.clearRect(0,0,512,680);
+  ctx.fillStyle='#f4ecda'; ctx.fillRect(0,0,512,680);
+  ctx.fillStyle='rgba(120,95,60,.10)'; ctx.fillRect(0,0,512,14); ctx.fillRect(0,666,512,14);
+  ctx.fillStyle='#5a4732';
+  if (page.type==='title'){
+    ctx.textAlign='left';
+    ctx.font='700 40px "Malgun Gothic", sans-serif';
+    const lines = wrapText(ctx, book.title, 400).slice(0,5);
+    let y=180; lines.forEach(ln=>{ ctx.fillText(ln, 56, y); y+=52; });
+    ctx.font='400 22px "Malgun Gothic", sans-serif'; ctx.fillStyle='#8a7355';
+    ctx.fillText(book.date, 56, y+26);
+    ctx.fillStyle='#b6a483'; ctx.font='400 18px "Malgun Gothic", sans-serif';
+    ctx.fillText('brotherwook · blog', 56, 636);
+  } else if (page.type==='thumb'){
+    // 프레임 + 썸네일(contain)
+    const fx=46, fy=90, fw=420, fh=500;
+    ctx.strokeStyle='#c9b48f'; ctx.lineWidth=3; ctx.strokeRect(fx,fy,fw,fh);
+    if (img && img.complete && img.naturalWidth){
+      const s=Math.min(fw/img.naturalWidth, fh/img.naturalHeight);
+      const w=img.naturalWidth*s, h=img.naturalHeight*s;
+      ctx.drawImage(img, fx+(fw-w)/2, fy+(fh-h)/2, w, h);
+    } else {
+      ctx.fillStyle='#e5d8bf'; ctx.fillRect(fx+2,fy+2,fw-4,fh-4);
+      ctx.fillStyle='#a48f6b'; ctx.font='400 20px "Malgun Gothic", sans-serif'; ctx.textAlign='center';
+      ctx.fillText('이미지 불러오는 중…', 256, fy+fh/2);
+    }
+    ctx.textAlign='center'; ctx.fillStyle='#8a7355'; ctx.font='600 20px "Malgun Gothic", sans-serif';
+    ctx.fillText('표지', 256, 636);
+  } else if (page.type==='text'){
+    ctx.textAlign='left'; ctx.font='400 25px "Malgun Gothic", sans-serif'; ctx.fillStyle='#5a4732';
+    const lines = wrapText(ctx, page.text, 400);
+    let y=120; for (const ln of lines){ if (y>600) break; ctx.fillText(ln, 56, y); y+=40; }
+  } else if (page.type==='end'){
+    ctx.textAlign='center';
+    ctx.font='60px serif'; ctx.fillText('🔖', 256, 300);
+    ctx.font='600 26px "Malgun Gothic", sans-serif'; ctx.fillStyle='#5a4732';
+    ctx.fillText('전체 글을 이어서 보시려면', 256, 380);
+    ctx.fillText('아래 "글 보러가기"를 누르세요', 256, 420);
+  }
+  // blank: 그대로 크림색
+}
+
+// ---- 선택된 책의 스프레드 구성 ----
+let current = null;      // { book, img, spreads, idx }
+function buildSpreads(book){
+  const pages = [{type:'title'}, {type:'thumb'}];
+  const sum = (book.summary||'').trim();
+  if (sum){
+    // 약 150자 단위로 나눠 페이지화
+    const chunks=[]; let s=sum;
+    while (s.length>0){ chunks.push(s.slice(0,150)); s=s.slice(150); }
+    chunks.slice(0,4).forEach(t=> pages.push({type:'text', text:t}));
+  }
+  pages.push({type:'end'});
+  const spreads=[];
+  for (let i=0;i<pages.length;i+=2) spreads.push({ left:pages[i], right:pages[i+1]||{type:'blank'} });
+  return spreads;
+}
+
+function renderSpread(){
+  if (!current) return;
+  const sp = current.spreads[current.idx];
+  drawPage(leftPage.c.getContext('2d'),  sp.left,  current.book, current.img);
+  drawPage(rightPage.c.getContext('2d'), sp.right, current.book, current.img);
+  leftPage.tex.needsUpdate = true; rightPage.tex.needsUpdate = true;
+  document.getElementById('pageno').textContent = (current.idx+1)+' / '+current.spreads.length;
+  document.getElementById('prevBtn').disabled = current.idx===0;
+  document.getElementById('nextBtn').disabled = current.idx>=current.spreads.length-1;
+}
+
+// ============================================================
+//  상태 전환 (책장 ↔ 읽기)
+// ============================================================
+let mode='shelf';                 // shelf | anim | reading
+let camTween=null;                // {from,to,t,dur,onDone}
+const readerEl=document.getElementById('reader');
+const hintEl=document.getElementById('hint');
+
+function tweenCamera(pose, dur, onDone){
+  camTween = { fromP:camera.position.clone(), toP:pose.pos.clone(),
+               fromT:controls.target.clone(), toT:pose.tgt.clone(), t:0, dur, onDone };
+}
+
+function openBookFor(mesh){
+  const book = mesh.userData.book;
+  const img = new Image();
+  img.onload = ()=>{ renderSpread(); };
+  img.src = book.thumb;
+  current = { book, img, spreads: buildSpreads(book), idx:0 };
+  renderSpread();
+  openBook.visible = true; openBook.scale.setScalar(0.2);
+  document.getElementById('goBtn').href = book.url;
+  mode='anim'; controls.enabled=false;
+  hintEl.classList.add('hide');
+  tweenCamera(READ_POSE, 0.7, ()=>{ mode='reading'; readerEl.classList.add('show'); });
+}
+
+function closeBook(){
+  readerEl.classList.remove('show');
+  mode='anim'; controls.enabled=false;
+  tweenCamera(SHELF_POSE, 0.7, ()=>{ mode='shelf'; controls.enabled=true; openBook.visible=false; current=null;
+    hintEl.classList.remove('hide'); });
+}
+
+// ---- 페이지 넘김 ----
+let flip=null;    // {dir, t, swapped}
+function startFlip(dir){
+  if (flip || mode!=='reading' || !current) return;
+  if (dir>0 && current.idx>=current.spreads.length-1) return;
+  if (dir<0 && current.idx<=0) return;
+  turnPivot.visible=true;
+  turnPivot.rotation.y = dir>0 ? 0 : -Math.PI;
+  flip={ dir, t:0, swapped:false };
+}
+
+// ---- 이벤트 ----
+const raycaster=new THREE.Raycaster(); const pointer=new THREE.Vector2();
+let downPos=null, movedFar=false, hoveredMesh=null;
+function setPointer(e){ const r=renderer.domElement.getBoundingClientRect();
+  pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1; }
+function pickBook(e){ setPointer(e); raycaster.setFromCamera(pointer,camera);
+  const hits=raycaster.intersectObjects(bookMeshes,false); return hits.length?hits[0].object:null; }
+
+function onMove(e){
+  if (downPos){ if (Math.hypot(e.clientX-downPos.x, e.clientY-downPos.y)>6) movedFar=true; }
+  if (mode!=='shelf'){ labelEl.style.display='none'; renderer.domElement.style.cursor='default'; return; }
+  const m=pickBook(e);
+  if (m!==hoveredMesh){ hoveredMesh=m; renderer.domElement.style.cursor = m?'pointer':'grab'; }
+  if (m){
+    labelEl.textContent=m.userData.book.title;
+    labelEl.style.display='block';
+    labelEl.style.left=e.clientX+'px'; labelEl.style.top=e.clientY+'px';
+  } else labelEl.style.display='none';
+}
+function onDown(e){ downPos={x:e.clientX,y:e.clientY}; movedFar=false; }
+function onUp(e){
+  const click = downPos && !movedFar; downPos=null;
+  if (!click || mode!=='shelf') return;
+  const m=pickBook(e); if (m) openBookFor(m);
+}
+renderer.domElement.addEventListener('pointermove', onMove);
+renderer.domElement.addEventListener('pointerdown', onDown);
+renderer.domElement.addEventListener('pointerup', onUp);
+renderer.domElement.addEventListener('pointerleave', ()=>{ labelEl.style.display='none'; });
+renderer.domElement.addEventListener('contextmenu', e=>e.preventDefault());
+
+document.getElementById('nextBtn').addEventListener('click', ()=>startFlip(+1));
+document.getElementById('prevBtn').addEventListener('click', ()=>startFlip(-1));
+document.getElementById('closeBtn').addEventListener('click', closeBook);
+window.addEventListener('keydown', e=>{
+  if (mode==='reading'){ if(e.key==='ArrowRight') startFlip(+1); else if(e.key==='ArrowLeft') startFlip(-1); else if(e.key==='Escape') closeBook(); }
+});
+
+// ---------- 후처리 ----------
+let composer;
+(function(){ composer=new EffectComposer(renderer); composer.addPass(new RenderPass(scene,camera));
+  const w=window.innerWidth||1,h=window.innerHeight||1;
+  composer.addPass(new UnrealBloomPass(new THREE.Vector2(w,h), 0.28, 0.5, 0.9));
+  composer.addPass(new OutputPass()); composer.setSize(w,h); })();
+
+// ---------- 루프 ----------
+const clock=new THREE.Clock();
+function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05);
+
+  // 책 호버 팝아웃
+  for (const m of bookMeshes){
+    const want = (m===hoveredMesh && mode==='shelf') ? 1 : 0;
+    m.userData.hover += (want - m.userData.hover) * Math.min(1, dt*10);
+    const pop = m.userData.hover;
+    m.position.z = m.userData.base.z + pop*0.7;
+    const em = pop*0.35;
+    for (const mat of m.userData.mats){ if(mat.emissive){ mat.emissive.setRGB(em*1.0, em*0.85, em*0.55); } }
+  }
+
+  // 카메라 트윈
+  if (camTween){
+    camTween.t += dt/camTween.dur;
+    const k=easeInOut(Math.min(1,camTween.t));
+    camera.position.lerpVectors(camTween.fromP, camTween.toP, k);
+    controls.target.lerpVectors(camTween.fromT, camTween.toT, k);
+    if (camTween.t>=1){ const cb=camTween.onDone; camTween=null; if(cb) cb(); }
+  }
+
+  // 펼친 책 등장 스케일
+  if (openBook.visible){
+    const target = (mode==='shelf') ? 0.2 : 1.0;
+    openBook.scale.x += (target-openBook.scale.x)*Math.min(1,dt*8);
+    openBook.scale.y = openBook.scale.z = openBook.scale.x;
+  }
+
+  // 페이지 넘김 애니메이션
+  if (flip){
+    flip.t += dt/0.5;
+    const k=easeInOut(Math.min(1,flip.t));
+    turnPivot.rotation.y = flip.dir>0 ? -Math.PI*k : -Math.PI*(1-k);
+    if (!flip.swapped && flip.t>=0.5){ current.idx += flip.dir; renderSpread(); flip.swapped=true; }
+    if (flip.t>=1){ turnPivot.visible=false; flip=null; }
+  }
+
+  controls.update();
+  composer.render();
+}
+animate();
+setTimeout(()=>{ loadingEl.style.display='none'; }, 400);
+
+function resizeNow(){ const w=window.innerWidth||1,h=window.innerHeight||1;
+  camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h); composer.setSize(w,h); }
+window.addEventListener('resize', resizeNow);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) resizeNow(); });
+</script>
+</body>
+</html>

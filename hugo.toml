@@ -81,6 +81,16 @@ enableEmoji = true
     url = "/room-cleaner/"
     weight = 40
   [[menu.main]]
+    identifier = "room"
+    name = "🏠 포트폴리오룸"
+    url = "/portfolio-room/"
+    weight = 45
+  [[menu.main]]
+    identifier = "bookshelf"
+    name = "📚 책장"
+    url = "/bookshelf/"
+    weight = 46
+  [[menu.main]]
     identifier = "about"
     name = "소개"
     url = "/about/"

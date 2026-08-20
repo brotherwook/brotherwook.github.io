@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>3D 포트폴리오 룸 · brotherwook</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #14100c;
+    font-family: -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; color: #fff;
+    -webkit-user-select: none; user-select: none; touch-action: none; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* 상단 안내 */
+  #title { position: fixed; top: 16px; left: 16px; z-index: 10; max-width: 320px;
+    background: rgba(34,27,20,.62); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,225,190,.16); border-radius: 16px; padding: 14px 18px;
+    box-shadow: 0 8px 30px rgba(0,0,0,.35); }
+  #title h1 { font-size: 16px; letter-spacing: .3px; margin-bottom: 5px; }
+  #title p { font-size: 12px; line-height: 1.6; color: #e6d6c4; }
+
+  #back { position: fixed; top: 16px; right: 16px; z-index: 10; font-size: 12px;
+    text-decoration: none; color: #e6d6c4; background: rgba(34,27,20,.62);
+    border: 1px solid rgba(255,225,190,.16); border-radius: 12px; padding: 9px 13px; }
+  #back:hover { color:#fff; border-color: rgba(255,225,190,.4); }
+
+  /* 오브젝트 라벨(호버 툴팁) */
+  #label { position: fixed; z-index: 12; pointer-events: none; display: none;
+    transform: translate(-50%, -130%); white-space: nowrap;
+    background: rgba(20,15,10,.82); border: 1px solid rgba(255,214,140,.35);
+    color: #ffe9c8; font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 999px;
+    box-shadow: 0 6px 22px rgba(0,0,0,.4); }
+  #label::after { content:''; position:absolute; left:50%; bottom:-5px; transform:translateX(-50%);
+    border:5px solid transparent; border-top-color: rgba(255,214,140,.35); }
+
+  /* 정보 패널(클릭 시) */
+  #panel { position: fixed; right: 18px; bottom: 18px; z-index: 14; width: 300px;
+    background: rgba(30,23,17,.9); backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,225,190,.2); border-radius: 18px; padding: 20px 20px 18px;
+    box-shadow: 0 14px 44px rgba(0,0,0,.5); transform: translateY(14px); opacity: 0;
+    transition: opacity .28s ease, transform .28s ease; pointer-events: none; }
+  #panel.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  #panel .emoji { font-size: 30px; margin-bottom: 8px; }
+  #panel h2 { font-size: 19px; margin-bottom: 8px; }
+  #panel p { font-size: 13px; line-height: 1.65; color: #e6d6c4; margin-bottom: 16px; }
+  #panel a.go { display: inline-block; text-decoration: none; cursor: pointer; font-size: 13px;
+    font-weight: 700; color: #2a1f16; background: linear-gradient(90deg,#ffdf9e,#ffb04a);
+    border-radius: 11px; padding: 10px 20px; transition: filter .15s; }
+  #panel a.go:hover { filter: brightness(1.07); }
+  #panel .close { position: absolute; top: 12px; right: 14px; cursor: pointer; font-size: 18px;
+    line-height: 1; color: #c9b8a5; background: none; border: none; }
+  #panel .close:hover { color: #fff; }
+
+  #hint { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-size: 12.5px; color: #efe3d5; background: rgba(34,27,20,.55);
+    border: 1px solid rgba(255,225,190,.14); border-radius: 999px; padding: 9px 18px; white-space: nowrap; }
+
+  #credit { position: fixed; bottom: 12px; right: 14px; z-index: 10; font-size: 10.5px; color: rgba(233,219,197,.5); }
+  #credit a { color: inherit; }
+
+  #loading { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center;
+    background: #14100c; color:#c9b299; font-size: 14px; text-align:center; }
+  #loading .lwrap { width: 240px; }
+  #lbar { margin-top: 12px; height: 6px; background: rgba(255,225,190,.14); border-radius: 5px; overflow: hidden; }
+  #lbar > i { display:block; height:100%; width:0%; background: linear-gradient(90deg,#ffdf9e,#ffb04a); transition: width .2s; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="title">
+  <h1>🏠 3D 포트폴리오 룸</h1>
+  <p>방 안의 <b>빛나는 물건</b>에 마우스를 올리고 클릭해보세요. 드래그로 회전, 휠로 확대·축소됩니다.</p>
+</div>
+<a id="back" href="/">← 블로그로</a>
+
+<div id="label"></div>
+
+<div id="panel">
+  <button class="close" aria-label="닫기">×</button>
+  <div class="emoji"></div>
+  <h2></h2>
+  <p></p>
+  <a class="go" target="_self">바로가기 →</a>
+</div>
+
+<div id="hint">📺 프로젝트 · 📚 블로그 글 · 🖼️ 소개 · 🪴 태그 · 💡 스탠드 클릭</div>
+<div id="credit">furniture: <a href="https://kenney.nl" target="_blank" rel="noopener">Kenney</a> (CC0) · three.js</div>
+
+<div id="loading"><div class="lwrap">🪑 방을 준비하는 중…<div id="lbar"><i></i></div></div></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// Kenney 가구 에셋은 청소게임 페이지 것을 그대로 재사용합니다.
+const KEN = '/room-cleaner/assets/models/kenney';
+const loadingEl = document.getElementById('loading');
+const lbar = document.querySelector('#lbar > i');
+
+// ============================================================
+// 여기만 바꾸면 각 오브젝트의 내용/링크가 바뀝니다.
+// hotspot id 별로: 이모지 / 제목 / 설명 / 링크 / 버튼문구 / 빛나는색
+// ============================================================
+const HOTSPOTS = {
+  projects: { emoji:'📺', title:'프로젝트', desc:'그동안 만든 프로젝트들을 GitHub에서 볼 수 있어요. 청소게임·이 방도 그 중 하나!',
+              link:'https://github.com/brotherwook', label:'프로젝트 보기', btn:'GitHub 열기 →', glow:0x4fb0ff, external:true },
+  posts:    { emoji:'📚', title:'블로그 글', desc:'개발하며 배운 것들을 기록한 글 모음이에요.',
+              link:'/posts/', label:'블로그 글', btn:'글 보러가기 →', glow:0xffcf6a },
+  about:    { emoji:'🖼️', title:'소개', desc:'brotherwook은 누구인지 — 간단한 소개 페이지로 이동합니다.',
+              link:'/about/', label:'소개', btn:'소개 보기 →', glow:0xff9ecb },
+  tags:     { emoji:'🪴', title:'태그', desc:'관심 주제별로 글을 모아둔 태그 목록이에요.',
+              link:'/tags/', label:'태그', btn:'태그 보기 →', glow:0x8ee6a2 },
+};
+
+// ---------- 렌더러 ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth || 1, window.innerHeight || 1);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.getElementById('app').appendChild(renderer.domElement);
+
+// ---------- 씬 / 카메라 ----------
+const scene = new THREE.Scene();
+const bgCanvas = document.createElement('canvas'); bgCanvas.width = bgCanvas.height = 512;
+(() => { const g=bgCanvas.getContext('2d');
+  const gr=g.createRadialGradient(256,215,40,256,256,360);
+  gr.addColorStop(0,'#3a2e24'); gr.addColorStop(0.55,'#241b13'); gr.addColorStop(1,'#100b07');
+  g.fillStyle=gr; g.fillRect(0,0,512,512); })();
+scene.background = new THREE.CanvasTexture(bgCanvas);
+
+const camera = new THREE.PerspectiveCamera(40, (window.innerWidth||1)/(window.innerHeight||1), 0.1, 100);
+camera.position.set(10, 9, 11);
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+// ---------- 로딩 매니저 & 로더 ----------
+const manager = new THREE.LoadingManager();
+manager.onProgress = (u,l,t) => { lbar.style.width = Math.round(l/t*100)+'%'; };
+manager.onLoad = () => { loadingEl.style.display = 'none'; };
+manager.onError = (u) => console.error('load error:', u);
+const gltf = new GLTFLoader(manager);
+
+// ---------- 조명 ----------
+const hemi = new THREE.HemisphereLight(0xfff1da, 0x4a3a2a, 0.62);
+scene.add(hemi);
+
+const sun = new THREE.DirectionalLight(0xffdf9e, 1.5);
+sun.position.set(3, 9, -8); sun.target.position.set(-1, 0, 1);
+sun.castShadow = true; sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.near=0.5; sun.shadow.camera.far=40;
+sun.shadow.camera.left=-10; sun.shadow.camera.right=10; sun.shadow.camera.top=10; sun.shadow.camera.bottom=-10;
+sun.shadow.bias=-0.0004; scene.add(sun, sun.target);
+
+// 클릭으로 켜는 스탠드 조명
+const lampLight = new THREE.PointLight(0xffca80, 0, 15, 2);
+lampLight.position.set(-4.1, 2.7, -3.5); scene.add(lampLight);
+const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.16,16,16), new THREE.MeshBasicMaterial({color:0xffe6b0}));
+bulb.position.copy(lampLight.position); bulb.visible=false; scene.add(bulb);
+let lampOn=false;
+function toggleLamp(){ lampOn=!lampOn; lampLight.intensity=lampOn?16:0; bulb.visible=lampOn; }
+
+// ---------- 방(저폴리 단색) ----------
+const ROOM={ w:10, d:10, h:6 }, HALF_W=ROOM.w/2, HALF_D=ROOM.d/2, backZ=-HALF_D, leftX=-HALF_W;
+const solid=(c,r=0.95)=>new THREE.MeshStandardMaterial({color:c,roughness:r,metalness:0});
+
+const floor=new THREE.Mesh(new THREE.BoxGeometry(ROOM.w,0.3,ROOM.d), solid(0xcaa276,0.9));
+floor.position.y=-0.15; floor.receiveShadow=true; scene.add(floor);
+const baseBox=new THREE.Mesh(new RoundedBoxGeometry(ROOM.w+0.8,0.5,ROOM.d+0.8,4,0.18), solid(0x6b5340,0.85));
+baseBox.position.y=-0.45; baseBox.receiveShadow=true; scene.add(baseBox);
+const leftWall=new THREE.Mesh(new THREE.BoxGeometry(0.2,ROOM.h,ROOM.d), solid(0xece2d4,1));
+leftWall.position.set(leftX,ROOM.h/2,0); leftWall.receiveShadow=true; scene.add(leftWall);
+const backWall=new THREE.Mesh(new THREE.BoxGeometry(ROOM.w,ROOM.h,0.2), solid(0xe4d8c7,1));
+backWall.position.set(0,ROOM.h/2,backZ); backWall.receiveShadow=true; scene.add(backWall);
+
+// ---------- 상호작용 등록 유틸 (가구/액자 공용) ----------
+const hotspotGroups = {};      // id -> [groups]
+const hoverables = [];         // 레이캐스트 대상 메시
+const lampMeshes = [];
+function registerHotspotGroup(id, group){
+  (hotspotGroups[id] = hotspotGroups[id] || []).push(group);
+  group.traverse(o=>{ if(o.isMesh){ o.userData.hotspot=id; hoverables.push(o); }});
+}
+
+// ---------- 벽 액자(소개) — 캔버스 텍스처 ----------
+const frameGroup = new THREE.Group();
+const frame = new THREE.Mesh(new THREE.BoxGeometry(2.0,2.6,0.12), solid(0xf6efe3,0.6));
+const picCanvas=document.createElement('canvas'); picCanvas.width=256; picCanvas.height=332;
+(()=>{ const g=picCanvas.getContext('2d');
+  const gr=g.createLinearGradient(0,0,0,332); gr.addColorStop(0,'#ffd9a8'); gr.addColorStop(1,'#ff9ecb');
+  g.fillStyle=gr; g.fillRect(0,0,256,332);
+  g.fillStyle='rgba(255,255,255,.9)'; g.font='bold 120px sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText('👋',128,150);
+  g.font='bold 30px sans-serif'; g.fillText('brotherwook',128,250); })();
+const pic = new THREE.Mesh(new THREE.PlaneGeometry(1.7,2.25), new THREE.MeshStandardMaterial({map:new THREE.CanvasTexture(picCanvas),roughness:0.5}));
+pic.position.z=0.07; frameGroup.add(frame,pic);
+frameGroup.position.set(leftX+0.16, 3.1, -1.0); frameGroup.rotation.y=Math.PI/2;
+frameGroup.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.userData.hotspot='about'; }});
+scene.add(frameGroup);
+registerHotspotGroup('about', frameGroup);
+
+// ---------- Kenney 가구 로더 ----------
+function loadModel(file,{x=0,z=0,rotY=0,size=null,baseY=0,cast=true,hotspot=null,pickLamp=false}={}){
+  gltf.load(`${KEN}/${file}.glb`, g=>{
+    const obj=g.scene;
+    obj.traverse(o=>{ if(o.isMesh){ o.castShadow=cast; o.receiveShadow=true;
+      if(o.material){ o.material=o.material.clone(); o.material.envMapIntensity=0.6; }  // 호버 발광용 개별 머티리얼
+      if(pickLamp){ lampMeshes.push(o); hoverables.push(o); }
+    }});
+    obj.rotation.y=rotY;
+    let box=new THREE.Box3().setFromObject(obj); const s=new THREE.Vector3(); box.getSize(s);
+    const md=Math.max(s.x,s.y,s.z); if(size&&md>0) obj.scale.setScalar(size/md);
+    box=new THREE.Box3().setFromObject(obj); const c=new THREE.Vector3(); box.getCenter(c);
+    obj.position.x+=x-c.x; obj.position.z+=z-c.z; obj.position.y+=baseY-box.min.y;
+    scene.add(obj);
+    if(hotspot) registerHotspotGroup(hotspot, obj);
+    if(pickLamp) obj.userData.isLamp=true;
+  }, undefined, err=>console.error('model fail',file,err));
+}
+
+// 위치/방향/크기는 숫자만 바꾸면 조정됩니다. (rotY: 라디안)
+const FURNITURE=[
+  {file:'rugRounded',       x:-0.8, z:1.4,  rotY:0,          size:3.6, cast:false},
+  {file:'loungeSofa',       x:-3.5, z:0.3,  rotY:Math.PI/2,  size:2.8},
+  {file:'pillowBlue',       x:-3.4, z:-0.4, rotY:Math.PI/2,  size:0.7, baseY:0.55},
+  {file:'loungeChairRelax', x:-1.2, z:3.1,  rotY:-2.4,       size:1.6},
+  {file:'tableCoffee',      x:-0.7, z:1.4,  rotY:0,          size:1.4},
+  {file:'books',            x:-0.4, z:1.5,  rotY:0.3,        size:0.55, baseY:0.42},
+  {file:'sideTable',        x:-4.1, z:-1.7, rotY:0,          size:1.0},
+  {file:'lampRoundFloor',   x:-4.1, z:-3.5, rotY:0,          size:2.4, pickLamp:true},
+  {file:'bookcaseOpen',     x:-2.6, z:-4.5, rotY:0,          size:2.8, hotspot:'posts'},
+  {file:'cabinetTelevision',x:1.6,  z:-4.4, rotY:0,          size:2.2},
+  {file:'televisionModern', x:1.6,  z:-4.5, rotY:0,          size:1.5, baseY:0.9, hotspot:'projects'},
+  {file:'pottedPlant',      x:4.0,  z:-3.9, rotY:0,          size:2.0, hotspot:'tags'},
+];
+for(const f of FURNITURE) loadModel(f.file, f);
+
+// ---------- 상호작용 ----------
+const raycaster=new THREE.Raycaster(); const pointer=new THREE.Vector2();
+const labelEl=document.getElementById('label');
+const panel=document.getElementById('panel');
+let hovered=null;                 // 현재 호버된 hotspot id (또는 'lamp')
+let downPos=null, moved=false;
+
+function setPointer(e){ const r=renderer.domElement.getBoundingClientRect();
+  pointer.x=((e.clientX-r.left)/r.width)*2-1; pointer.y=-((e.clientY-r.top)/r.height)*2+1; }
+
+function pick(e){ setPointer(e); raycaster.setFromCamera(pointer,camera);
+  const hits=raycaster.intersectObjects(hoverables,false);
+  return hits.length ? hits[0].object : null; }
+
+function setGlow(id, on){
+  const groups = id==='lamp' ? [] : (hotspotGroups[id]||[]);
+  const color = id==='lamp' ? 0xffca80 : (HOTSPOTS[id]?.glow||0xffffff);
+  const meshes = id==='lamp' ? lampMeshes : [];
+  groups.forEach(gr=>gr.traverse(o=>{ if(o.isMesh) applyGlow(o,on,color); }));
+  meshes.forEach(o=>applyGlow(o,on,color));
+}
+function applyGlow(o,on,color){ if(!o.material||!o.material.emissive) return;
+  o.material.emissive.setHex(on?color:0x000000);
+  o.material.emissiveIntensity = on?0.55:0; }
+
+function onMove(e){
+  if(downPos){ if(Math.hypot(e.clientX-downPos.x,e.clientY-downPos.y)>6) moved=true; }
+  const obj=pick(e); const id=obj? (obj.userData.isLamp||lampMeshes.includes(obj)?'lamp':obj.userData.hotspot) : null;
+  if(id!==hovered){
+    if(hovered) setGlow(hovered,false);
+    hovered=id;
+    if(hovered) setGlow(hovered,true);
+    renderer.domElement.style.cursor = hovered? 'pointer':'grab';
+  }
+  if(hovered){
+    const info = hovered==='lamp' ? {label: lampOn?'💡 불 끄기':'💡 불 켜기'} : HOTSPOTS[hovered];
+    labelEl.textContent = info.label;
+    labelEl.style.display='block';
+    labelEl.style.left = e.clientX+'px';
+    labelEl.style.top  = e.clientY+'px';
+  } else labelEl.style.display='none';
+}
+
+function onDown(e){ downPos={x:e.clientX,y:e.clientY}; moved=false; }
+function onUp(e){
+  const wasClick = downPos && !moved;
+  downPos=null;
+  if(!wasClick) return;
+  const obj=pick(e); if(!obj) return;
+  if(obj.userData.isLamp||lampMeshes.includes(obj)){ toggleLamp();
+    labelEl.textContent = lampOn?'💡 불 끄기':'💡 불 켜기'; return; }
+  const id=obj.userData.hotspot; if(id && HOTSPOTS[id]) openPanel(id);
+}
+
+renderer.domElement.addEventListener('pointermove',onMove);
+renderer.domElement.addEventListener('pointerdown',onDown);
+renderer.domElement.addEventListener('pointerup',onUp);
+renderer.domElement.addEventListener('pointerleave',()=>{ if(hovered){setGlow(hovered,false);hovered=null;} labelEl.style.display='none'; });
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+
+// ---------- 정보 패널 ----------
+const pEmoji=panel.querySelector('.emoji'), pTitle=panel.querySelector('h2'),
+      pDesc=panel.querySelector('p'), pGo=panel.querySelector('a.go');
+function openPanel(id){ const h=HOTSPOTS[id];
+  pEmoji.textContent=h.emoji; pTitle.textContent=h.title; pDesc.textContent=h.desc;
+  pGo.textContent=h.btn; pGo.href=h.link; pGo.target = h.external?'_blank':'_self';
+  pGo.rel = h.external?'noopener':'';
+  panel.classList.add('show'); }
+panel.querySelector('.close').addEventListener('click',()=>panel.classList.remove('show'));
+
+// ---------- 카메라 컨트롤 ----------
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.target.set(-0.2,1.5,-0.6);
+controls.enableDamping=true; controls.dampingFactor=0.08; controls.enablePan=false;
+controls.minDistance=7; controls.maxDistance=24;
+controls.minPolarAngle=0.2; controls.maxPolarAngle=1.45;
+controls.update();
+
+// ---------- 후처리(은은한 블룸) ----------
+let composer;
+(function(){ composer=new EffectComposer(renderer); composer.addPass(new RenderPass(scene,camera));
+  const w=window.innerWidth||1,h=window.innerHeight||1; composer.addPass(new UnrealBloomPass(new THREE.Vector2(w,h),0.35,0.55,0.85));
+  composer.addPass(new OutputPass()); composer.setSize(w,h); })();
+
+const clock=new THREE.Clock();
+function animate(){ requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+  // 호버된 오브젝트가 은은하게 맥동
+  if(hovered){ const pulse=0.45+0.2*Math.sin(t*4);
+    (hovered==='lamp'?lampMeshes:(hotspotGroups[hovered]||[]).flatMap(g=>{const a=[];g.traverse(o=>o.isMesh&&a.push(o));return a;}))
+      .forEach(o=>{ if(o.material&&o.material.emissive) o.material.emissiveIntensity=pulse; }); }
+  controls.update(); composer.render(); }
+animate();
+setTimeout(()=>{ loadingEl.style.display='none'; }, 15000);
+
+function resizeNow(){ const w=window.innerWidth||document.documentElement.clientWidth||1,h=window.innerHeight||document.documentElement.clientHeight||1;
+  camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h); composer.setSize(w,h); }
+window.addEventListener('resize',resizeNow);
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) resizeNow(); });
+</script>
+</body>
+</html>
