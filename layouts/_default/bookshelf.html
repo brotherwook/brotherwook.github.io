@@ -234,14 +234,17 @@ BOOKS.forEach((b, i) => {
   const z = 0.0;
   mesh.position.set(x, y, z);
   mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.userData = { book:b, base:mesh.position.clone(), hover:0, mats };
+  mesh.userData = { book:b, base:mesh.position.clone(), hover:0, mats, color };
   scene.add(mesh); bookMeshes.push(mesh);
 });
 
 // 카메라 초기 위치: 책장 전체가 보이도록
 const shelfCenterY = BOTTOM_Y + (SHELF_H-0.4)/2;
 const SHELF_POSE = { pos:new THREE.Vector3(0, shelfCenterY+1.2, INNER_W*1.35 + 6), tgt:new THREE.Vector3(0, shelfCenterY, 0) };
-const READ_POSE  = { pos:new THREE.Vector3(0, shelfCenterY, INNER_W*1.35 + 6.9), tgt:new THREE.Vector3(0, shelfCenterY, 3.2) };
+// 읽기 위치: 책을 앞으로 당기고(READ_Z) 카메라를 가깝게 → 글자가 크게 보이도록
+const READ_Z = 5.6, READ_ROT_X = -0.06;
+const READ_POS  = new THREE.Vector3(0, shelfCenterY, READ_Z);
+const READ_POSE = { pos:new THREE.Vector3(0, shelfCenterY+0.15, READ_Z + 5.8), tgt:new THREE.Vector3(0, shelfCenterY, READ_Z) };
 camera.position.copy(SHELF_POSE.pos);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -256,8 +259,8 @@ controls.update();
 // ============================================================
 const PAGE_W = 2.4, PAGE_H = 3.2;
 const openBook = new THREE.Group();
-openBook.position.set(0, shelfCenterY, 3.2);
-openBook.rotation.x = -0.12;
+openBook.position.copy(READ_POS);
+openBook.rotation.x = READ_ROT_X;
 openBook.visible = false;
 scene.add(openBook);
 
@@ -280,6 +283,11 @@ const turnPivot = new THREE.Group(); openBook.add(turnPivot);
 const turnPage = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W, PAGE_H),
   new THREE.MeshStandardMaterial({ color:0xf3ead9, roughness:0.9, side:THREE.DoubleSide }));
 turnPage.position.set(PAGE_W/2 + 0.02, 0, 0.04); turnPivot.add(turnPage); turnPivot.visible=false;
+
+// 닫힌 책(책장으로 돌아갈 때 보이는 덮인 모습)
+const closedProxy = new THREE.Mesh(new THREE.BoxGeometry(PAGE_W+0.14, PAGE_H+0.18, 0.5),
+  new THREE.MeshStandardMaterial({ color:0x8a5a3c, roughness:0.6 }));
+closedProxy.visible=false; openBook.add(closedProxy);
 
 // ---- 페이지 그리기 ----
 function drawPage(ctx, page, book, img){
@@ -358,6 +366,9 @@ function renderSpread(){
 // ============================================================
 let mode='shelf';                 // shelf | anim | reading
 let camTween=null;                // {from,to,t,dur,onDone}
+let bookAnim=null;                // 펼친 책 위치/크기 트윈 {kind,t,dur,fromP,toP,fromS,toS,fromRX,toRX,onDone}
+let closeSeq=null;                // 덮기 시퀀스 {phase,t}
+let selectedMesh=null;            // 현재 펼친 책의 선반 책등
 const readerEl=document.getElementById('reader');
 const hintEl=document.getElementById('hint');
 
@@ -367,24 +378,38 @@ function tweenCamera(pose, dur, onDone){
 }
 
 function openBookFor(mesh){
+  selectedMesh = mesh;
   const book = mesh.userData.book;
   const img = new Image();
   img.onload = ()=>{ renderSpread(); };
   img.src = book.thumb;
   current = { book, img, spreads: buildSpreads(book), idx:0 };
   renderSpread();
-  openBook.visible = true; openBook.scale.setScalar(0.2);
+  // 펼침 상태 초기화
+  lMesh.visible=true; rMesh.visible=true; coverBoard.visible=true; closedProxy.visible=false; turnPivot.visible=false;
+  openBook.visible = true;
+  mesh.visible = false;                       // 선반의 책등 숨김 (책을 꺼낸 느낌)
+  const slotPos = mesh.position.clone();
+  openBook.position.copy(slotPos); openBook.rotation.x=0; openBook.scale.setScalar(0.14);
   document.getElementById('goBtn').href = book.url;
   mode='anim'; controls.enabled=false;
   hintEl.classList.add('hide');
-  tweenCamera(READ_POSE, 0.7, ()=>{ mode='reading'; readerEl.classList.add('show'); });
+  // 스파인 자리 → 앞쪽 읽기 위치로 커지며 이동
+  bookAnim = { kind:'open', t:0, dur:0.7, fromP:slotPos.clone(), toP:READ_POS.clone(),
+               fromS:0.14, toS:1, fromRX:0, toRX:READ_ROT_X,
+               onDone:()=>{ mode='reading'; readerEl.classList.add('show'); } };
+  tweenCamera(READ_POSE, 0.7);
 }
 
 function closeBook(){
+  if (mode!=='reading' || !selectedMesh) return;
   readerEl.classList.remove('show');
   mode='anim'; controls.enabled=false;
-  tweenCamera(SHELF_POSE, 0.7, ()=>{ mode='shelf'; controls.enabled=true; openBook.visible=false; current=null;
-    hintEl.classList.remove('hide'); });
+  const col = selectedMesh.userData.color || 0x8a5a3c;
+  closedProxy.material.color.setHex(col);
+  turnPage.material.color.setHex(col);        // 덮는 표지 색 = 책 색
+  turnPivot.visible=true; turnPivot.rotation.y=0;
+  closeSeq = { phase:'fold', t:0 };           // 1) 덮기 → 2) 제자리 복귀 (animate에서 처리)
 }
 
 // ---- 페이지 넘김 ----
@@ -393,6 +418,7 @@ function startFlip(dir){
   if (flip || mode!=='reading' || !current) return;
   if (dir>0 && current.idx>=current.spreads.length-1) return;
   if (dir<0 && current.idx<=0) return;
+  turnPage.material.color.setHex(0xf3ead9);   // 넘김 페이지는 크림색
   turnPivot.visible=true;
   turnPivot.rotation.y = dir>0 ? 0 : -Math.PI;
   flip={ dir, t:0, swapped:false };
@@ -469,11 +495,34 @@ function animate(){
     if (camTween.t>=1){ const cb=camTween.onDone; camTween=null; if(cb) cb(); }
   }
 
-  // 펼친 책 등장 스케일
-  if (openBook.visible){
-    const target = (mode==='shelf') ? 0.2 : 1.0;
-    openBook.scale.x += (target-openBook.scale.x)*Math.min(1,dt*8);
-    openBook.scale.y = openBook.scale.z = openBook.scale.x;
+  // 펼친 책 위치/크기 트윈 (열기 · 돌아가기)
+  if (bookAnim){
+    bookAnim.t += dt/bookAnim.dur;
+    const k=easeInOut(Math.min(1,bookAnim.t));
+    openBook.position.lerpVectors(bookAnim.fromP, bookAnim.toP, k);
+    const s=bookAnim.fromS + (bookAnim.toS-bookAnim.fromS)*k; openBook.scale.setScalar(s);
+    openBook.rotation.x = bookAnim.fromRX + (bookAnim.toRX-bookAnim.fromRX)*k;
+    if (bookAnim.t>=1){ const cb=bookAnim.onDone; bookAnim=null; if(cb) cb(); }
+  }
+
+  // 덮기 시퀀스: 표지가 스파인 기준으로 넘어와 책을 덮음 → 끝나면 제자리 복귀 시작
+  if (closeSeq && closeSeq.phase==='fold'){
+    closeSeq.t += dt/0.45;
+    const k=easeInOut(Math.min(1,closeSeq.t));
+    turnPivot.rotation.y = -Math.PI*k;
+    if (closeSeq.t>=1){
+      lMesh.visible=false; rMesh.visible=false; turnPivot.visible=false; coverBoard.visible=false;
+      closedProxy.visible=true;                       // 닫힌 책 모습으로 전환
+      const slotPos = selectedMesh.position.clone();
+      bookAnim = { kind:'return', t:0, dur:0.6, fromP:openBook.position.clone(), toP:slotPos,
+                   fromS:openBook.scale.x, toS:0.14, fromRX:openBook.rotation.x, toRX:0,
+                   onDone:()=>{ openBook.visible=false; closedProxy.visible=false;
+                     coverBoard.visible=true; lMesh.visible=true; rMesh.visible=true;
+                     if(selectedMesh) selectedMesh.visible=true; selectedMesh=null; current=null;
+                     mode='shelf'; controls.enabled=true; hintEl.classList.remove('hide'); } };
+      tweenCamera(SHELF_POSE, 0.6);                    // 책과 함께 카메라도 선반 뷰로
+      closeSeq=null;
+    }
   }
 
   // 페이지 넘김 애니메이션
