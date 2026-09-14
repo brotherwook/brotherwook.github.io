@@ -9,6 +9,13 @@ buildDrafts = false
 buildFuture = false
 buildExpired = false
 enableEmoji = true
+enableGitInfo = true          # 글 날짜를 git 커밋 시각으로 채울 수 있게 함
+
+# 날짜 자동화: front matter에 date가 없으면 → git 커밋 시각 → (미커밋 시) 파일 수정 시각 순으로 대체.
+# date 를 직접 적으면 그 값이 우선(발행일 고정용). lastmod 는 git 커밋 시각으로 자동 갱신.
+[frontmatter]
+  date = ["date", ":git", ":fileModTime", ":default"]
+  lastmod = ["lastmod", ":git", "date"]
 
 # 페이지네이션 (한 페이지에 보여줄 글 수)
 [pagination]
