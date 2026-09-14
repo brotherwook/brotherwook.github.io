@@ -1,0 +1,8 @@
+{{- /* Head custom content area start */ -}}
+{{- /* 모든 페이지의 <head> 에 주입됩니다. (PaperMod extend_head 훅 오버라이드) */ -}}
+{{- if hugo.IsProduction -}}
+{{- /* Google AdSense — 배포(프로덕션 빌드)에서만 로드, 로컬 hugo server 에서는 제외 */ -}}
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1180143854535089"
+     crossorigin="anonymous"></script>
+{{- end -}}
+{{- /* Head custom content area end */ -}}

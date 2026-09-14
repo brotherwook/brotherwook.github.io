@@ -472,10 +472,7 @@ let composer;
 // ---------- 루프 ----------
 const clock=new THREE.Clock();
 function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
-function animate(){
-  requestAnimationFrame(animate);
-  const dt=Math.min(clock.getDelta(),0.05);
-
+function tick(dt){
   // 책 호버 팝아웃
   for (const m of bookMeshes){
     const want = (m===hoveredMesh && mode==='shelf') ? 1 : 0;
@@ -535,8 +532,8 @@ function animate(){
   }
 
   controls.update();
-  composer.render();
 }
+function animate(){ requestAnimationFrame(animate); tick(Math.min(clock.getDelta(),0.05)); composer.render(); }
 animate();
 setTimeout(()=>{ loadingEl.style.display='none'; }, 400);
 
